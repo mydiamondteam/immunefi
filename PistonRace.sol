@@ -68,7 +68,6 @@ contract PistonRace is OwnableUpgradeable {
     mapping(address => User) public users;
     mapping(address => UserDepositReal) public usersRealDeposits;
     mapping(address => Airdrop) public airdrops;
-    mapping(address => string) nicknames; // !!!!!!!!!! TODO: cleanup/remove before deployment
     mapping(uint256 => address) public id2Address;
     mapping(address => UserBoost) public usersBoosts;
 
@@ -101,7 +100,6 @@ contract PistonRace is OwnableUpgradeable {
     uint256 public total_bnb;
     uint256 public total_txs;
 
-    uint8 public MAX_LENGTH_NICKNAME; // !!!!!!!!!! TODO: cleanup/remove before deployment
     bool public STORE_BUSD_VALUE;
     uint256 public AIRDROP_MIN_AMOUNT;
 
