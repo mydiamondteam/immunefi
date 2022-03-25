@@ -564,15 +564,16 @@ contract PistonRace is OwnableUpgradeable {
     function rollAmountOf(address _addr, uint256 _toBeRolledAmount) view public returns(uint256 rollAmount) {
         
         //validate the total amount that can be rolled is 5x the users real deposit only.
-        uint256 maxRollAmount = maxRollOf(usersRealDeposits[_addr].deposits); // 90
+        uint256 maxRollAmount = maxRollOf(usersRealDeposits[_addr].deposits); 
 
-        rollAmount = _toBeRolledAmount; // 2
+        rollAmount = _toBeRolledAmount; 
 
-        //get the net positive amount available for roll.
-        if(users[_addr].deposits.add(rollAmount) <= maxRollAmount) {
-            rollAmount = maxRollAmount.sub(users[_addr].deposits);
-        }else{
+        if(users[_addr].deposits >= maxRollAmount) { // user already got max roll
             revert("User exceeded x5 of total deposit to be rolled.");
+        }
+
+        if(users[_addr].deposits.add(rollAmount) >= maxRollAmount) { // user will reach max roll with current roll
+            rollAmount = maxRollAmount.sub(users[_addr].deposits); // only let him roll until max roll is reached
         }
     }
 
