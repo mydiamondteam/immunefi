@@ -7,7 +7,7 @@
 	
 ## Controller:
 ### Setup before Deploy:
-    Tokeaddress in Deploy Script!
+    Tokeaddress in Deploy Script (initializer)!
 	
 ## PriceFeed:
 
