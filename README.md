@@ -7,7 +7,7 @@
 	
 ## Controller:
 ### Setup before Deploy:
-    Tokeaddress in Deploy Script (initializer)!
+    Insert Tokenaddress in Deploy Script (initializer)!
 	
 ## PriceFeed:
 
@@ -17,7 +17,7 @@
 ## PistonRace:
 	
 ### Setup before deploy: 
-    Change piston Token address and PriceFeed address in code!
+    Change Piston Token address and PriceFeed address in code!
 	
 ### After deployment: 
     Set Race Address and Ecoystem Wallet in Controller.
