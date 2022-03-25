@@ -142,7 +142,7 @@ contract PistonRace is OwnableUpgradeable {
         max_deposit_multiplier = 5;
         deposit_bracket_max = 10;  // sustainability fee is (bracket * 5)
 
-        CompoundTax = 5;
+        CompoundTax = 3;
         ExitTax = 10;
         EjectTax = 10;
         DepositTax = 10;
@@ -272,7 +272,7 @@ contract PistonRace is OwnableUpgradeable {
         // Claim if divs are greater than 1% of the deposit
         if (claimsAvailable(_addr) > _amount / 100){
             uint256 claimedDivs = _claim(_addr, true);
-             taxedDivs = claimedDivs.sub(claimedDivs.mul(CompoundTax).div(100)); // 5% tax on compounding
+             taxedDivs = claimedDivs.sub(claimedDivs.mul(CompoundTax).div(100)); // 3% tax on compounding
             _total_amount += taxedDivs;
             taxedDivs = taxedDivs / 2;
         }
@@ -509,7 +509,7 @@ contract PistonRace is OwnableUpgradeable {
 
         uint256 to_payout = _claim(_addr, false);
 
-        uint256 payout_taxed = to_payout.mul(SafeMath.sub(100, CompoundTax)).div(100); // 5% tax on compounding
+        uint256 payout_taxed = to_payout.mul(SafeMath.sub(100, CompoundTax)).div(100); // 3% tax on compounding
         
         uint256 roll_amount_final = rollAmountOf(_addr, payout_taxed);
 
@@ -584,8 +584,8 @@ contract PistonRace is OwnableUpgradeable {
 
             if (!isClaimedOut){
                 //Payout referrals
-                uint256 compoundTaxedPayout = _to_payout.mul(SafeMath.sub(100, CompoundTax)).div(100); // 5% tax on compounding
-                _refPayout(_addr, compoundTaxedPayout, 5);
+                uint256 compoundTaxedPayout = _to_payout.mul(SafeMath.sub(100, CompoundTax)).div(100); // 3% tax on compounding
+                _refPayout(_addr, compoundTaxedPayout, CompoundTax);
             }
         }
 
