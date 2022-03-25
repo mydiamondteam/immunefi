@@ -38,7 +38,7 @@ contract PistonRace is OwnableUpgradeable {
 		uint256 amount_PSTN;
         uint256 amount_BUSD; // real amount in BUSD
 		uint256 depositTime;
-
+        bool ejected;
 	}
 
     struct UserDepositReal {
@@ -68,6 +68,7 @@ contract PistonRace is OwnableUpgradeable {
     mapping(address => User) public users;
     mapping(address => UserDepositReal) public usersRealDeposits;
     mapping(address => Airdrop) public airdrops;
+    mapping(address => string) nicknames; // !!!!!!!!!! TODO: cleanup/remove before deployment
     mapping(uint256 => address) public id2Address;
     mapping(address => UserBoost) public usersBoosts;
 
@@ -100,6 +101,7 @@ contract PistonRace is OwnableUpgradeable {
     uint256 public total_bnb;
     uint256 public total_txs;
 
+    uint8 public MAX_LENGTH_NICKNAME; // !!!!!!!!!! TODO: cleanup/remove before deployment
     bool public STORE_BUSD_VALUE;
     uint256 public AIRDROP_MIN_AMOUNT;
 
@@ -136,7 +138,7 @@ contract PistonRace is OwnableUpgradeable {
         userDepositEjectDays = 7 days;
         payoutRate = 1;
         ref_depth  = 15;
-        ref_bonus  = 10;
+        ref_bonus  = 5; // 5 % to round robin
         max_deposit_multiplier = 5;
         deposit_bracket_max = 10;  // sustainability fee is (bracket * 5)
 
@@ -303,7 +305,8 @@ contract PistonRace is OwnableUpgradeable {
             UserDepositsForEject(
                 _total_amount, 
                 pistonTokenPriceFeed.getPrice(_total_amount.div(1 ether)), 
-                block.timestamp
+                block.timestamp,
+                false
             )
         );
 
@@ -445,10 +448,7 @@ contract PistonRace is OwnableUpgradeable {
         //for deposit _addr is the sender/depositor
 
         address _up = users[_addr].upline;
-        uint256 _bonus = _amount * _refBonus / 100; // 10% of amount
-        uint256 _share = _bonus / 4;                // 2.5% of amount
-        uint256 _up_share = _bonus.sub(_share);     // 7.5% of amount
-        bool _team_found = false;
+        uint256 _bonus = _amount * _refBonus / 100; // 5% of amount
 
         for(uint8 i = 0; i < ref_depth; i++) {
 
@@ -465,54 +465,19 @@ contract PistonRace is OwnableUpgradeable {
                 if (isBalanceCovered(_up, i + 1) && isNetPositive(_up) && 
                 users[_addr].deposits.add(_bonus) < this.maxRollOf(usersRealDeposits[_addr].deposits)){
 
-                    //Team wallets are split 75/25%
-                    if(users[_up].referrals >= 5 && !_team_found) {
-
-                        //This should only be called once
-                        _team_found = true;
-
-                        (uint256 gross_payout_upline,,,) = payoutOf(_up);
-                        users[_up].accumulatedDiv = gross_payout_upline;
-                        users[_up].deposits += _up_share;
-                        users[_up].deposit_time = block.timestamp;
-
-                        (uint256 gross_payout_addr,,,) = payoutOf(_addr);
-                        users[_addr].accumulatedDiv = gross_payout_addr;
-                        users[_addr].deposits += _share;
-                        users[_addr].deposit_time = block.timestamp;
-
-                        //match accounting
-                        users[_up].match_bonus += _up_share;
-
-                        //Synthetic Airdrop tracking; team wallets get automatic airdrop benefits
-                        airdrops[_up].airdrops += _share;
-                        airdrops[_up].last_airdrop = block.timestamp;
-                        airdrops[_addr].airdrops_received += _share;
-
-                        //Global airdrops
-                        total_airdrops += _share;
-
-                        //Events
-                        emit NewDeposit(_addr, _share);
-                        emit NewDeposit(_up, _up_share);
-
-                        emit NewAirdrop(_up, _addr, _share, block.timestamp);
-                        emit MatchPayout(_up, _addr, _up_share);
-                    } else {
-
-                        (uint256 gross_payout,,,) = payoutOf(_up);
-                        users[_up].accumulatedDiv = gross_payout;
-                        users[_up].deposits += _bonus;
-                        users[_up].deposit_time = block.timestamp;
+                    (uint256 gross_payout,,,) = payoutOf(_up);
+                    users[_up].accumulatedDiv = gross_payout;
+                    users[_up].deposits += _bonus;
+                    users[_up].deposit_time = block.timestamp;
 
 
-                        //match accounting
-                        users[_up].match_bonus += _bonus;
+                    //match accounting
+                    users[_up].match_bonus += _bonus;
 
-                        //events
-                        emit NewDeposit(_up, _bonus);
-                        emit MatchPayout(_up, _addr, _bonus);
-                    }
+                    //events
+                    emit NewDeposit(_up, _bonus);
+                    emit MatchPayout(_up, _addr, _bonus);
+                    
 
                     if (users[_up].upline == address(0)){
                         users[_addr].ref_claim_pos = ref_depth;
@@ -572,7 +537,7 @@ contract PistonRace is OwnableUpgradeable {
 
         if(users[_addr].deposits.add(rollAmount) >= maxRollAmount) { // user will reach max roll with current roll
             rollAmount = maxRollAmount.sub(users[_addr].deposits); // only let him roll until max roll is reached
-        }
+        }        
     }
 
     //max roll per user is 5x user deposit.
@@ -667,18 +632,22 @@ contract PistonRace is OwnableUpgradeable {
         require(user.userDepositsForEject[0].depositTime > block.timestamp.sub(userDepositEjectDays), "eject period is over"); // use first deposit time for begin of the period
 
         for (uint256 i = 0; i < user.userDepositsForEject.length; i++) {
-            // get current BUSD value of deposited pstn token.
-            uint256 current_amount_BUSD = pistonPrice.mul(user.userDepositsForEject[i].amount_PSTN.div(1 ether));
-            amountDeposits_PSTN += user.userDepositsForEject[i].amount_PSTN;
+            if(user.userDepositsForEject[i].ejected == false){
+                // get current BUSD value of deposited pstn token.
+                uint256 current_amount_BUSD = pistonPrice.mul(user.userDepositsForEject[i].amount_PSTN.div(1 ether));
+                amountDeposits_PSTN += user.userDepositsForEject[i].amount_PSTN;
 
-            //check if current busd price of users deposited pstn token is greater that pstn amount(in busd) deposited.
-            if(current_amount_BUSD >= user.userDepositsForEject[i].amount_BUSD){
-                amountAvailableForEject += SafeMath.min(user.userDepositsForEject[i].amount_BUSD.div(pistonPrice), user.userDepositsForEject[i].amount_PSTN);                
+                //check if current busd price of users deposited pstn token is greater that pstn amount(in busd) deposited.
+                if(current_amount_BUSD >= user.userDepositsForEject[i].amount_BUSD){
+                    amountAvailableForEject += SafeMath.min(user.userDepositsForEject[i].amount_BUSD.div(pistonPrice), user.userDepositsForEject[i].amount_PSTN);                
+                }
+                //else-if the current busd price of users deposited pstn token is lower than pstn amount(in busd) deposited.
+                else if(pistonPrice.mul(user.userDepositsForEject[i].amount_PSTN.div(1 ether)) <= user.userDepositsForEject[i].amount_BUSD){
+                    amountAvailableForEject += user.userDepositsForEject[i].amount_PSTN;
+                }         
+
+                user.userDepositsForEject[i].ejected = true;
             }
-            //else-if the current busd price of users deposited pstn token is lower than pstn amount(in busd) deposited.
-            else if(pistonPrice.mul(user.userDepositsForEject[i].amount_PSTN.div(1 ether)) <= user.userDepositsForEject[i].amount_BUSD){
-                amountAvailableForEject += user.userDepositsForEject[i].amount_PSTN;
-            }          
 		}
 
         // final check for manipulation. whatever the price has calculated, the deposited amount is the upper limit
