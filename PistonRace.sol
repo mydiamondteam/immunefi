@@ -61,6 +61,11 @@ contract PistonRace is OwnableUpgradeable {
         uint256 last_action_time;
     }    
 
+    struct UserWithdrawn {
+        uint256 withdrawn; // amount of Tokens
+        uint256 withdrawn_BUSD; // amount in BUSD
+    }
+
     ITokenMint private tokenMint;
     IToken private pistonToken;
     ITokenPriceFeed private pistonTokenPriceFeed;
@@ -105,6 +110,8 @@ contract PistonRace is OwnableUpgradeable {
     bool public STORE_BUSD_VALUE;
     uint256 public AIRDROP_MIN_AMOUNT;
 
+    mapping(address => UserWithdrawn) public usersWithdrawn;
+
     event Upline(address indexed addr, address indexed upline);
     event NewDeposit(address indexed addr, uint256 amount);
     event Leaderboard(address indexed addr, uint256 referrals, uint256 total_deposits, uint256 total_payouts, uint256 total_structure);
@@ -119,6 +126,7 @@ contract PistonRace is OwnableUpgradeable {
     event HeartBeatIntervalUpdate(address indexed addr, uint256 interval);
     event HeartBeat(address indexed addr, uint256 timestamp);
     event Ejected(address indexed addr, uint256 amount, uint256 timestamp);
+    event EjectDebug(address indexed addr, uint256 taxedamount, uint256 alreadywithdrawn, uint256 timestamp);
 
     /* ========== INITIALIZER ========== */
 
@@ -190,6 +198,9 @@ contract PistonRace is OwnableUpgradeable {
     function TESTAccumulatedDiv(address _addr, uint256 _value) public/* onlyOwner */{
         users[_addr].accumulatedDiv = _value;
     }
+    function TEST_UPDATE_EJECT_DAYS() public onlyOwner {
+        userDepositEjectDays = 15 minutes;
+    }
 
     function updateRefDepth(uint256 _newRefDepth) public onlyOwner {
         ref_depth = _newRefDepth;
@@ -256,6 +267,8 @@ contract PistonRace is OwnableUpgradeable {
 
         address _addr = msg.sender;
 
+        require(!HasUsedEject(_addr), "user is ejected");
+
         (uint256 realizedDeposit,) = calculateDepositTax(_amount);
         uint256 _total_amount = realizedDeposit;
 
@@ -319,6 +332,7 @@ contract PistonRace is OwnableUpgradeable {
     function stakeBoost(uint256 _amount) external {
 
         address _addr = msg.sender;
+        require(!HasUsedEject(msg.sender), "user used eject");
         require(_amount >= min_staked_boost_amount,"Did not meet minimum amount that can be staked.");
         require(
             pistonToken.transferFrom(
@@ -408,7 +422,7 @@ contract PistonRace is OwnableUpgradeable {
         3) sender address should not be equal to the contract owner address.
         4) up-line(referrer address) must have an existing deposit in to the protocol
         */
-        if(users[_addr].upline == address(0) && _upline != _addr && _addr != owner() && (users[_upline].deposit_time > 0 || _upline == owner() )) {
+        if(users[_addr].upline == address(0) && !HasUsedEject(_upline) && _upline != _addr && _addr != owner() && (users[_upline].deposit_time > 0 || _upline == owner() )) {
             users[_addr].upline = _upline;
             users[_upline].referrals++;
 
@@ -507,6 +521,8 @@ contract PistonRace is OwnableUpgradeable {
     //@dev Claim and deposit;
     function _roll(address _addr) internal {
 
+        require(!HasUsedEject(msg.sender), "user used eject");
+
         uint256 to_payout = _claim(_addr, false);
 
         uint256 payout_taxed = to_payout.mul(SafeMath.sub(100, CompoundTax)).div(100); // 3% tax on compounding
@@ -559,6 +575,9 @@ contract PistonRace is OwnableUpgradeable {
             tokenMint.mint(address(this), differenceToMint);
         }
 
+        usersWithdrawn[_addr].withdrawn = realizedPayout;
+        usersWithdrawn[_addr].withdrawn_BUSD = pistonTokenPriceFeed.getPrice(realizedPayout.div(1 ether));
+
         //transfer payout to the investor address
         require(pistonToken.transfer(address(msg.sender), realizedPayout));
 
@@ -571,6 +590,7 @@ contract PistonRace is OwnableUpgradeable {
     function _claim(address _addr, bool isClaimedOut) internal returns (uint256) {
         (uint256 _gross_payout, uint256 _max_payout, uint256 _to_payout,) = payoutOf(_addr);
         require(users[_addr].payouts < _max_payout, "Full payouts");
+        require(!HasUsedEject(_addr), "user is ejected");
 
         // Deposit payout
         if(_to_payout > 0) {
@@ -627,6 +647,7 @@ contract PistonRace is OwnableUpgradeable {
         uint256 amountDeposits_PSTN;
         uint256 pistonPrice = pistonTokenPriceFeed.getPrice(1);
 
+        require(!HasUsedEject(msg.sender), "user already used eject");
         require(pistonPrice > 0, "piston price missing");
         require(user.userDepositsForEject.length > 0, "no deposits");
         require(user.userDepositsForEject[0].depositTime > block.timestamp.sub(userDepositEjectDays), "eject period is over"); // use first deposit time for begin of the period
@@ -653,12 +674,14 @@ contract PistonRace is OwnableUpgradeable {
         // final check for manipulation. whatever the price has calculated, the deposited amount is the upper limit
         require(amountAvailableForEject <= amountDeposits_PSTN, "wrong calculation");
 
-        amountAvailableForEject -= user.payouts;
+        //amountAvailableForEject -= user.payouts; // dont use this! it also includes the rolls!
 
         //update user deposit info 
         user.deposits = 0; // eject == game over
         user.payouts = 0;
         usersRealDeposits[msg.sender].deposits = 0;
+        airdrops[msg.sender].airdrops = 0;
+        user.rolls = 0;
 
         if(STORE_BUSD_VALUE){
             usersRealDeposits[msg.sender].deposits_BUSD = 0;
@@ -667,6 +690,11 @@ contract PistonRace is OwnableUpgradeable {
         //transfer payout to the investor address less 10% sustainability fee
         uint256 ejectTaxAmount = amountAvailableForEject.div(100).mul(EjectTax);
         amountAvailableForEject = amountAvailableForEject.safeSub(ejectTaxAmount);
+
+        require(usersWithdrawn[msg.sender].withdrawn < amountAvailableForEject, "withdrawn amount is higher than eject amount");
+
+        emit EjectDebug(msg.sender, amountAvailableForEject, usersWithdrawn[msg.sender].withdrawn, block.timestamp);
+        amountAvailableForEject = amountAvailableForEject.safeSub(usersWithdrawn[msg.sender].withdrawn);
 
         //mint new tokens if reward vault is getting low, or amountAvailableForEject is higher than the tokens inside the contract.
         uint256 vaultBalance = getVaultBalance();
@@ -686,6 +714,10 @@ contract PistonRace is OwnableUpgradeable {
     //@dev Returns true if the address is net positive
     function isNetPositive(address _addr) public view returns (bool) {
 
+        if(HasUsedEject(_addr)){
+            return false;
+        }
+
         (uint256 _credits, uint256 _debits) = creditsAndDebits(_addr);
 
         return _credits > _debits;
@@ -700,6 +732,14 @@ contract PistonRace is OwnableUpgradeable {
         _credits = _airdrop.airdrops + _user.rolls + _user.deposits;
         _debits = _user.payouts;
 
+    }
+
+    function HasUsedEject(address _addr) public view returns (bool) {
+        User memory _user = users[_addr];
+        if(_user.userDepositsForEject.length > 0){
+            return _user.userDepositsForEject[0].ejected;
+        }
+        return false;
     }
 
     //@dev Returns whether PSTN balance matches level
@@ -799,6 +839,7 @@ contract PistonRace is OwnableUpgradeable {
 
         address _addr = msg.sender;
         require(_amount >= AIRDROP_MIN_AMOUNT, "minimum not reached");
+        require(!HasUsedEject(msg.sender), "user used eject");
         //@TODO: special airdrop tax?? or without....
         (uint256 _realizedAmount,) = calculateDepositTax(_amount);
         //This can only fail if the balance is insufficient
