@@ -73,7 +73,7 @@ contract PistonRace is OwnableUpgradeable {
     mapping(address => User) public users;
     mapping(address => UserDepositReal) public usersRealDeposits;
     mapping(address => Airdrop) public airdrops;
-    mapping(address => string) nicknames; // !!!!!!!!!! TODO: cleanup/remove before deployment
+    //mapping(address => string) nicknames; // !!!!!!!!!! TODO: cleanup/remove before deployment
     mapping(uint256 => address) public id2Address;
     mapping(address => UserBoost) public usersBoosts;
 
@@ -106,7 +106,7 @@ contract PistonRace is OwnableUpgradeable {
     uint256 public total_bnb;
     uint256 public total_txs;
 
-    uint8 public MAX_LENGTH_NICKNAME; // !!!!!!!!!! TODO: cleanup/remove before deployment
+    //uint8 public MAX_LENGTH_NICKNAME; // !!!!!!!!!! TODO: cleanup/remove before deployment
     bool public STORE_BUSD_VALUE;
     uint256 public AIRDROP_MIN_AMOUNT;
 
@@ -126,7 +126,7 @@ contract PistonRace is OwnableUpgradeable {
     event HeartBeatIntervalUpdate(address indexed addr, uint256 interval);
     event HeartBeat(address indexed addr, uint256 timestamp);
     event Ejected(address indexed addr, uint256 amount, uint256 timestamp);
-    event EjectDebug(address indexed addr, uint256 taxedamount, uint256 alreadywithdrawn, uint256 timestamp);
+    //event EjectDebug(address indexed addr, uint256 taxedamount, uint256 alreadywithdrawn, uint256 timestamp);
 
     /* ========== INITIALIZER ========== */
 
@@ -518,6 +518,33 @@ contract PistonRace is OwnableUpgradeable {
         }
     }
 
+    // calculates the next ref address
+    function getNextUpline(address _addr, uint256 _amount, uint256 _refBonus) public view returns (address _next_upline, bool _balance_coverd, bool _net_positive, bool _max_roll_ok ) {
+
+        address _up = users[_addr].upline;
+        uint256 _bonus = _amount * _refBonus / 100;
+
+        for(uint8 i = 0; i < ref_depth; i++) {
+            // If we have reached the top of the chain, the owner
+            if(_up == address(0)){
+                break;
+            }
+
+            //We only match if the claim position is valid
+            if(users[_addr].ref_claim_pos == i) {
+                _balance_coverd = isBalanceCovered(_up, (i + 1));
+                _net_positive = isNetPositive(_up);
+                _max_roll_ok = users[_addr].deposits.add(_bonus) < this.maxRollOf(usersRealDeposits[_addr].deposits);
+                
+                return (_up, _balance_coverd, _net_positive, _max_roll_ok);
+            }
+
+            _up = users[_up].upline;
+        }        
+
+        return (address(0), false, false, false);
+    }
+
     //@dev Claim and deposit;
     function _roll(address _addr) internal {
 
@@ -693,7 +720,7 @@ contract PistonRace is OwnableUpgradeable {
 
         require(usersWithdrawn[msg.sender].withdrawn < amountAvailableForEject, "withdrawn amount is higher than eject amount");
 
-        emit EjectDebug(msg.sender, amountAvailableForEject, usersWithdrawn[msg.sender].withdrawn, block.timestamp);
+        //emit EjectDebug(msg.sender, amountAvailableForEject, usersWithdrawn[msg.sender].withdrawn, block.timestamp);
         amountAvailableForEject = amountAvailableForEject.safeSub(usersWithdrawn[msg.sender].withdrawn);
 
         //mint new tokens if reward vault is getting low, or amountAvailableForEject is higher than the tokens inside the contract.
