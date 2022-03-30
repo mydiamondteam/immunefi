@@ -73,7 +73,7 @@ contract PistonRace is OwnableUpgradeable {
     mapping(address => User) public users;
     mapping(address => UserDepositReal) public usersRealDeposits;
     mapping(address => Airdrop) public airdrops;
-    //mapping(address => string) nicknames; // !!!!!!!!!! TODO: cleanup/remove before deployment
+
     mapping(uint256 => address) public id2Address;
     mapping(address => UserBoost) public usersBoosts;
 
@@ -93,7 +93,7 @@ contract PistonRace is OwnableUpgradeable {
     uint256 private minimumAmount;
 
     uint256 public deposit_bracket_size;     // @BB 5% increase whale tax per 5000 tokens... 10 below cuts it at 50% since 5 * 10
-    uint256 public max_payout_cap;           // 50K PISTON or 10% of supply
+    uint256 public max_payout_cap;           // 50K PISTON or 5% of supply
     uint256 private deposit_bracket_max;     // sustainability fee is (bracket * 5)
     uint256 public min_staked_boost_amount;  // Minimum staked Boost amount should be the same as 0 level ref_depth amount.
 
@@ -106,7 +106,7 @@ contract PistonRace is OwnableUpgradeable {
     uint256 public total_bnb;
     uint256 public total_txs;
 
-    //uint8 public MAX_LENGTH_NICKNAME; // !!!!!!!!!! TODO: cleanup/remove before deployment
+
     bool public STORE_BUSD_VALUE;
     uint256 public AIRDROP_MIN_AMOUNT;
 
@@ -180,10 +180,20 @@ contract PistonRace is OwnableUpgradeable {
         ref_balances.push(2900 ether);          // 15 $2900 worth of PSTN
     }
         
-    /****** Administrative Functions *******/
-    function updateTaxes(uint256 _depositTax, uint256 _claimTax) public onlyOwner {
+    /** NOTE! this will be removed when testing is done. **/
+    function TESTAccumulatedDiv(address _addr, uint256 _value) public/* onlyOwner */{
+        users[_addr].accumulatedDiv = _value;
+    }
+    function TEST_UPDATE_EJECT_DAYS() public onlyOwner {
+        userDepositEjectDays = 15 minutes;
+    }
+
+    /****** Administrative Functions ******/
+    function updateTaxes(uint256 _depositTax, uint256 _claimTax, uint256 _exitTax, uint256 _compoundTax) public onlyOwner {
         DepositTax = _depositTax;
         ClaimTax = _claimTax;
+        ExitTax = _exitTax;
+        CompoundTax = _compoundTax;
     }
     
     function updatePistonTokenPriceFeed(address priceFeedAddress, bool _store_busd_enabled) public onlyOwner {
@@ -195,12 +205,12 @@ contract PistonRace is OwnableUpgradeable {
         payoutRate = _newPayoutRate;
     }
 
-    function TESTAccumulatedDiv(address _addr, uint256 _value) public/* onlyOwner */{
-        users[_addr].accumulatedDiv = _value;
-    }
-    function TEST_UPDATE_EJECT_DAYS() public onlyOwner {
-        userDepositEjectDays = 15 minutes;
-    }
+																					 
+											 
+	 
+														
+										  
+	 
 
     function updateRefDepth(uint256 _newRefDepth) public onlyOwner {
         ref_depth = _newRefDepth;
@@ -218,15 +228,15 @@ contract PistonRace is OwnableUpgradeable {
         minimumAmount = _newminimumAmount * 1e18;
     }
 
-    function updateCompoundTax(uint256 _newCompoundTax) public onlyOwner {
-        require(_newCompoundTax >= 0 && _newCompoundTax <= 20);
-        CompoundTax = _newCompoundTax;
-    }
+																		  
+															   
+									  
+	 
 
-    function updateExitTax(uint256 _newExitTax) public onlyOwner {
-        require(_newExitTax >= 0 && _newExitTax <= 20);
-        ExitTax = _newExitTax;
-    }
+																  
+													   
+							  
+	 
 
     function updateDepositBracketSize(uint256 _newBracketSize) public onlyOwner {
         deposit_bracket_size = _newBracketSize * 1 ether;
@@ -240,13 +250,13 @@ contract PistonRace is OwnableUpgradeable {
         min_staked_boost_amount = _newMinimumStakedBoostAmount * 1 ether;
     }
 
-    function SET_AIRDROP_MIN_AMOUNT(uint8 value) public onlyOwner {
+    function updateMinimumAirdropAmount(uint8 value) public onlyOwner {
         AIRDROP_MIN_AMOUNT = value * 1e18;
     }
 
-    function UPDATE_EJECT_DAYS(uint8 value) public onlyOwner {
-        userDepositEjectDays = value * 1 days;
-    }
+															  
+											  
+	 
 
     function updateHoldRequirements(uint256[] memory _newRefBalances) public onlyOwner {
         require(_newRefBalances.length == ref_depth);
@@ -256,7 +266,7 @@ contract PistonRace is OwnableUpgradeable {
         }
     }
 
-    /********** User Fuctions **************************************************/
+    /****** User Fuctions ******/
     //deposit_amount -- can only be done by the project address for first deposit.
     function deposit(uint256 _amount) external onlyOwner{
         _deposit(msg.sender, _amount);
@@ -363,7 +373,7 @@ contract PistonRace is OwnableUpgradeable {
         //same rules as in eject here. if price has increased, the dollar amount is the cap. if the price has fallen the pston amount is the cap.
 
         uint256 amountAvailableForUnstakeBoost = 0;
-        uint256 current_amount_BUSD = pistonPrice.mul(usersBoosts[_addr].stakedBoost_PSTN.div(1 ether));
+        uint256 current_amount_BUSD = pistonPrice.mul(usersBoosts[_addr].stakedBoost_PSTN).div(1 ether);
 
         //check if current busd price of users deposited pstn token is greater that pstn amount(in busd) deposited.
         if(current_amount_BUSD >= usersBoosts[_addr].stakedBoost_BUSD){
@@ -412,7 +422,7 @@ contract PistonRace is OwnableUpgradeable {
         _roll(_addr);
     }
 
-    /********** Internal Fuctions **************************************************/
+    /******************** Internal Fuctions ********************/
 
     //@dev Add direct referral and update team structure of upline
     function _setUpline(address _addr, address _upline) internal {
@@ -682,7 +692,7 @@ contract PistonRace is OwnableUpgradeable {
         for (uint256 i = 0; i < user.userDepositsForEject.length; i++) {
             if(user.userDepositsForEject[i].ejected == false){
                 // get current BUSD value of deposited pstn token.
-                uint256 current_amount_BUSD = pistonPrice.mul(user.userDepositsForEject[i].amount_PSTN.div(1 ether));
+                uint256 current_amount_BUSD = pistonPrice.mul(user.userDepositsForEject[i].amount_PSTN).div(1 ether);
                 amountDeposits_PSTN += user.userDepositsForEject[i].amount_PSTN;
 
                 //check if current busd price of users deposited pstn token is greater that pstn amount(in busd) deposited.
@@ -690,7 +700,7 @@ contract PistonRace is OwnableUpgradeable {
                     amountAvailableForEject += SafeMath.min(user.userDepositsForEject[i].amount_BUSD.div(pistonPrice), user.userDepositsForEject[i].amount_PSTN);                
                 }
                 //else-if the current busd price of users deposited pstn token is lower than pstn amount(in busd) deposited.
-                else if(pistonPrice.mul(user.userDepositsForEject[i].amount_PSTN.div(1 ether)) <= user.userDepositsForEject[i].amount_BUSD){
+                else if(pistonPrice.mul(user.userDepositsForEject[i].amount_PSTN).div(1 ether) <= user.userDepositsForEject[i].amount_BUSD){
                     amountAvailableForEject += user.userDepositsForEject[i].amount_PSTN;
                 }         
 
@@ -701,7 +711,7 @@ contract PistonRace is OwnableUpgradeable {
         // final check for manipulation. whatever the price has calculated, the deposited amount is the upper limit
         require(amountAvailableForEject <= amountDeposits_PSTN, "wrong calculation");
 
-        //amountAvailableForEject -= user.payouts; // dont use this! it also includes the rolls!
+																								
 
         //update user deposit info 
         user.deposits = 0; // eject == game over
@@ -715,7 +725,7 @@ contract PistonRace is OwnableUpgradeable {
         }
 
         //transfer payout to the investor address less 10% sustainability fee
-        uint256 ejectTaxAmount = amountAvailableForEject.div(100).mul(EjectTax);
+        uint256 ejectTaxAmount = amountAvailableForEject.mul(EjectTax).div(100);
         amountAvailableForEject = amountAvailableForEject.safeSub(ejectTaxAmount);
 
         require(usersWithdrawn[msg.sender].withdrawn < amountAvailableForEject, "withdrawn amount is higher than eject amount");
