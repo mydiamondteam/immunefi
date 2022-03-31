@@ -89,6 +89,8 @@ contract PistonToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
 	
 	function setUniswapV2PairAndController(address _uniswapV2Pair, address   _controller) external onlyOwner{
 		uniswapV2Pair=address(_uniswapV2Pair);
+		setAutomatedMarketMakerPair(_uniswapV2Pair, true);
+
 		controller=address(_controller);
 		excludeFromFees(controller, true);
 	}
@@ -102,7 +104,7 @@ contract PistonToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
 	}   
 	
 	function setAutomatedMarketMakerPair(address pair, bool value) public onlyOwner {
-		require(pair != uniswapV2Pair, "PISTON: The PanBUSDSwap pair cannot be removed from automatedMarketMakerPairs");
+		//require(pair != uniswapV2Pair, "PISTON: The PanBUSDSwap pair cannot be removed from automatedMarketMakerPairs");
 		_setAutomatedMarketMakerPair(pair, value);
 	}
 	
@@ -117,7 +119,7 @@ contract PistonToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
 	}
 	
 	function _setAutomatedMarketMakerPair(address pair, bool value) private {
-		require(automatedMarketMakerPairs[pair] != value, "PISTON: Automated market maker pair is already set to that value");
+		//require(automatedMarketMakerPairs[pair] != value, "PISTON: Automated market maker pair is already set to that value");
 		automatedMarketMakerPairs[pair] = value;
 	}
 	
@@ -167,7 +169,7 @@ contract PistonToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
 			super._transfer(from, to, 0);
 			return;
 		}
-		
+
 		if(automatedMarketMakerPairs[from] && !_isExcludedFromFees[to]){
 			require(amount <= maxBuyAmount, "You are exceeding maxBuyAmount");
 		}
