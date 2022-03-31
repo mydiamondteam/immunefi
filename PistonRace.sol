@@ -73,7 +73,6 @@ contract PistonRace is OwnableUpgradeable {
     mapping(address => User) public users;
     mapping(address => UserDepositReal) public usersRealDeposits;
     mapping(address => Airdrop) public airdrops;
-
     mapping(uint256 => address) public id2Address;
     mapping(address => UserBoost) public usersBoosts;
 
@@ -93,7 +92,7 @@ contract PistonRace is OwnableUpgradeable {
     uint256 private minimumAmount;
 
     uint256 public deposit_bracket_size;     // @BB 5% increase whale tax per 5000 tokens... 10 below cuts it at 50% since 5 * 10
-    uint256 public max_payout_cap;           // 50K PISTON or 5% of supply
+    uint256 public max_payout_cap;           // 50K PISTON or 10% of supply
     uint256 private deposit_bracket_max;     // sustainability fee is (bracket * 5)
     uint256 public min_staked_boost_amount;  // Minimum staked Boost amount should be the same as 0 level ref_depth amount.
 
@@ -105,7 +104,6 @@ contract PistonRace is OwnableUpgradeable {
     uint256 public total_withdraw;
     uint256 public total_bnb;
     uint256 public total_txs;
-
 
     bool public STORE_BUSD_VALUE;
     uint256 public AIRDROP_MIN_AMOUNT;
@@ -611,9 +609,10 @@ contract PistonRace is OwnableUpgradeable {
             uint256 differenceToMint = realizedPayout.sub(vaultBalance);
             tokenMint.mint(address(this), differenceToMint);
         }
-
-        usersWithdrawn[_addr].withdrawn = realizedPayout;
-        usersWithdrawn[_addr].withdrawn_BUSD = pistonTokenPriceFeed.getPrice(realizedPayout.div(1 ether));
+	
+	//update user withdrawn statistics.
+        usersWithdrawn[_addr].withdrawn += realizedPayout;
+        usersWithdrawn[_addr].withdrawn_BUSD += pistonTokenPriceFeed.getPrice(realizedPayout.div(1 ether));
 
         //transfer payout to the investor address
         require(pistonToken.transfer(address(msg.sender), realizedPayout));
