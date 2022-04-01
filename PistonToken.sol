@@ -46,7 +46,7 @@ contract PistonToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
 		// exclude from paying fees or having max transaction amount
 		excludeFromFees(owner(), true);
 		excludeFromFees(address(this), true);
-		mintMaster = owner(); // initial owner = mintmaster
+
 		
 		// settings
 		swapEnabled = false;
@@ -54,8 +54,8 @@ contract PistonToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
 		swapEnabled = true;
 		tradingEnabled = true;
 		maxBuyAmount = 20000 * (10**18);
-		maxWalletBalance = 20000 * (10**18);
-		maxSellAmount = 3000 * (10**18);
+		maxWalletBalance = 5000 * (10**18);
+		maxSellAmount = 20000 * (10**18);
 		
 		swapTokensAtAmount = 250 * (10**18);
 		
@@ -162,7 +162,7 @@ contract PistonToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
 		require(!_isBlacklisted[from] && !_isBlacklisted[to], 'Blacklisted address');
 		
 		if(!_isExcludedFromFees[from] && !_isExcludedFromFees[to]){
-		require(tradingEnabled, "Trading not enabled");
+			require(tradingEnabled, "Trading not enabled");
 		}
 		
 		if(amount == 0) {
@@ -202,6 +202,8 @@ contract PistonToken is Initializable, ERC20Upgradeable, OwnableUpgradeable {
 			takeFee = false;
 		}
 		if(takeFee) {
+			require(amount > totalFees.add(extraSellFee), "amount must be higher than fees"); // shellboxes audit A.1. Fees Can Be Bypassed
+
 			uint256 fees = amount.mul(totalFees).div(100);
 			if(automatedMarketMakerPairs[to]){
 				fees += amount.mul(extraSellFee).div(100);

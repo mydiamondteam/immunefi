@@ -10,6 +10,8 @@
     Insert Tokenaddress in Deploy Script (initializer)!
 	
 ## PriceFeed:
+### Setup after Deploy: 
+	use setup() method to set all marketpairs and token addresses
 
 ### Setup after deploy: 
     setMarketPair with LP from Controller.
