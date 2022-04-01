@@ -82,14 +82,15 @@ contract PistonTokenController is Initializable, ERC20Upgradeable, OwnableUpgrad
 			addLiquidity(otherHalf, newBalance);
 			
 			// send 30% to  _ecosystemWalletAddress after BUSD conversion
-			swapTokensForBUSD(forEcosystem);			
-			IERC20Upgradeable(BUSD).transfer(_ecosystemWalletAddress, IERC20Upgradeable(BUSD).balanceOf(address(this)));
+			swapTokensForBUSD(forEcosystem);	
+
+			require(IERC20Upgradeable(BUSD).transfer(_ecosystemWalletAddress, IERC20Upgradeable(BUSD).balanceOf(address(this))), "transfer to ecosystem wallet failed" );
 			
 			// send 10% to burn
-			pistonToken.transfer(deadWallet, forBurn);			
+			require( pistonToken.transfer(deadWallet, forBurn), "transfer to burn failes" );	
 			
 			//remaining tokens to race contract - around 40%
-			pistonToken.transfer(_raceContractAddress, pistonToken.balanceOf(address(this)));
+			require( pistonToken.transfer(_raceContractAddress, pistonToken.balanceOf(address(this))), "transfer to race contract failed" );
 			
 			
 		}
