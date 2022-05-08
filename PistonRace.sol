@@ -281,32 +281,27 @@ contract PistonRaceTestnet is OwnableUpgradeable {
 
     //@dev Deposit specified PISTON amount supplying an upline referral
     function deposit(address _upline, uint256 _amount) external {
-
         address _addr = msg.sender;
-
         require(!HasUsedEject(_addr), "user is ejected");
-
         (uint256 realizedDeposit,) = calculateDepositTax(_amount);
         uint256 _total_amount = realizedDeposit;
-
+        uint256 _total_amount_real = realizedDeposit;
         require(_amount >= minimumAmount, "Minimum deposit");
-
         //If fresh account require a minimal amount of PISTON
         if (users[_addr].deposits == 0){
             require(_amount >= minimumInitial, "Initial deposit too low");
         }
-
         _setUpline(_addr, _upline);
-
         uint256 taxedDivs;
         // Claim if divs are greater than 1% of the deposit
-        if (claimsAvailable(_addr) > _amount / 100){
+        if (claimsAvailable(_addr) > _amount / 100 
+            && users[_addr].deposits < this.maxRollOf(usersRealDeposits[_addr].deposits)
+            ){
             uint256 claimedDivs = _claim(_addr, true);
              taxedDivs = claimedDivs.sub(claimedDivs.mul(CompoundTax).div(100)); // 3% tax on compounding
             _total_amount += taxedDivs;
             taxedDivs = taxedDivs / 2;
         }
-
         //Transfer PISTON Tokens to the contract
         require(
             pistonToken.transferFrom(
@@ -316,35 +311,28 @@ contract PistonRaceTestnet is OwnableUpgradeable {
             ),
             "PISTON token transfer failed"
         );
-
         // record user new deposit (here comes fresh money. userRealDeposits only contains the amount from external. nothing from roll)
-        usersRealDeposits[_addr].deposits += _total_amount;
+        usersRealDeposits[_addr].deposits += _total_amount_real;
         if(STORE_BUSD_VALUE){
-            usersRealDeposits[_addr].deposits_BUSD += pistonTokenPriceFeed.getPrice(1).mul(_total_amount).div(1 ether); // new cash in BUSD
+            usersRealDeposits[_addr].deposits_BUSD += pistonTokenPriceFeed.getPrice(1).mul(_total_amount_real).div(1 ether); // new cash in BUSD
         }
-
         //per user deposit, 10% goes to sustainability tax. 
-
         _deposit(_addr, _total_amount);
-
         _refPayout(_addr, realizedDeposit + taxedDivs, ref_bonus);
-
         /** deposit amount and Time of Deposits/ it will record all new deposits of the user. 
             This mapping will be used to check if the deposits is will qualified for eject **/
 		users[_addr].userDepositsForEject.push(
             UserDepositsForEject(
-                _total_amount, 
-                pistonTokenPriceFeed.getPrice(1).mul(_total_amount).div(1 ether), 
+                _total_amount_real, 
+                pistonTokenPriceFeed.getPrice(1).mul(_total_amount_real).div(1 ether), 
                 block.timestamp,
                 false
             )
         );
-
         emit Leaderboard(_addr, users[_addr].referrals, users[_addr].deposits, users[_addr].payouts, users[_addr].total_structure);
         total_txs++;
-
     }
-    
+        
     function stakeBoostSimulate(address _addr, uint256 _amount) external view returns (uint256 stakedPSTN, uint256 stakedBUSD) {
 
         require(users[_addr].upline != address(0) || _addr == owner(), "user not found"); // non existent user has no upline
