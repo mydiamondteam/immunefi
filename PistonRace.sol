@@ -3,7 +3,7 @@ pragma solidity ^0.8.9;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
-contract PistonRaceTestnet is OwnableUpgradeable {
+contract Race is OwnableUpgradeable {
 
     using SafeMath for uint256;
 
@@ -73,7 +73,7 @@ contract PistonRaceTestnet is OwnableUpgradeable {
     mapping(address => User) public users;
     mapping(address => UserDepositReal) public usersRealDeposits;
     mapping(address => Airdrop) public airdrops;
-    mapping(address => string) nicknames; // !!!!!!!!!! TODO: cleanup/remove before deployment
+    
     mapping(uint256 => address) public id2Address;
     mapping(address => UserBoost) public usersBoosts;
 
@@ -81,7 +81,6 @@ contract PistonRaceTestnet is OwnableUpgradeable {
     uint256 public ExitTax;
     uint256 public EjectTax;
     uint256 public DepositTax;
-    uint256 public ClaimTax;// !!!!!!!!!! TODO: cleanup/remove before deployment
 
     uint256 private payoutRate;
     uint256 private ref_depth;
@@ -106,7 +105,6 @@ contract PistonRaceTestnet is OwnableUpgradeable {
     uint256 public total_bnb;
     uint256 public total_txs;
 
-    uint8 public MAX_LENGTH_NICKNAME; // !!!!!!!!!! TODO: cleanup/remove before deployment
     bool public STORE_BUSD_VALUE;
     uint256 public AIRDROP_MIN_AMOUNT;
 
@@ -130,7 +128,7 @@ contract PistonRaceTestnet is OwnableUpgradeable {
     event Ejected(address indexed addr, uint256 amount, uint256 timestamp);
 
     /* ========== INITIALIZER ========== */
-/*
+
     function initialize() external initializer {
         __Ownable_init();
 
@@ -180,15 +178,8 @@ contract PistonRaceTestnet is OwnableUpgradeable {
         ref_balances.push(2500 ether);          // 13 $2500 worth of PSTN
         ref_balances.push(2700 ether);          // 14 $2700 worth of PSTN
         ref_balances.push(2900 ether);          // 15 $2900 worth of PSTN
-    }*/
+    }
         
-    /** NOTE! this will be removed when testing is done. **/
-     function TESTAccumulatedDiv(address _addr, uint256 _value) public/* onlyOwner */{
-         users[_addr].accumulatedDiv = _value;
-     }
-     function TEST_UPDATE_EJECT_DAYS() public onlyOwner {
-         userDepositEjectDays = 15 minutes;
-     }
 
     /****** Administrative Functions ******/
     function updateTaxes(uint256 _depositTax, uint256 _exitTax, uint256 _compoundTax) external onlyOwner {
@@ -206,13 +197,6 @@ contract PistonRaceTestnet is OwnableUpgradeable {
         payoutRate = _newPayoutRate;
     }
 
-																					 
-											 
-	 
-														
-										  
-	 
-
     function updateRefDepth(uint256 _newRefDepth) external onlyOwner {
         ref_depth = _newRefDepth;
     }
@@ -229,15 +213,6 @@ contract PistonRaceTestnet is OwnableUpgradeable {
         minimumAmount = _newminimumAmount * 1e18;
     }
 
-																		  
-															   
-									  
-	 
-
-																  
-													   
-							  
-	 
 
     function updateDepositBracketSize(uint256 _newBracketSize) external onlyOwner {
         deposit_bracket_size = _newBracketSize * 1 ether;
@@ -251,14 +226,14 @@ contract PistonRaceTestnet is OwnableUpgradeable {
         min_staked_boost_amount = _newMinimumStakedBoostAmount;
     }
 
-    function updateMinimumAirdropAmount(uint8 value) public onlyOwner {
-        AIRDROP_MIN_AMOUNT = value * 1e18;
+    function updateMinimumAirdropAmount(uint256 value) public onlyOwner {
+        AIRDROP_MIN_AMOUNT = value;
     }
 
     function updateAirdropEnabled(bool value) external onlyOwner {
         AIRDROP_ENABLED = value;
     }
-    function updateEjectEnabledEnabled(bool value) external onlyOwner {
+    function updateEjectEnabled(bool value) external onlyOwner {
         EJECT_ENABLED = value;
     }
 															  
@@ -281,27 +256,35 @@ contract PistonRaceTestnet is OwnableUpgradeable {
 
     //@dev Deposit specified PISTON amount supplying an upline referral
     function deposit(address _upline, uint256 _amount) external {
+
         address _addr = msg.sender;
+
         require(!HasUsedEject(_addr), "user is ejected");
+
         (uint256 realizedDeposit,) = calculateDepositTax(_amount);
         uint256 _total_amount = realizedDeposit;
         uint256 _total_amount_real = realizedDeposit;
+
         require(_amount >= minimumAmount, "Minimum deposit");
+
         //If fresh account require a minimal amount of PISTON
         if (users[_addr].deposits == 0){
             require(_amount >= minimumInitial, "Initial deposit too low");
         }
+
         _setUpline(_addr, _upline);
+
         uint256 taxedDivs;
-        // Claim if divs are greater than 1% of the deposit
+        // roll if divs are greater than 1% of the deposit
         if (claimsAvailable(_addr) > _amount / 100 
-            && users[_addr].deposits < this.maxRollOf(usersRealDeposits[_addr].deposits)
+            && users[_addr].deposits < this.maxRollOf(usersRealDeposits[_addr].deposits) // don't roll if user has reached 5x
             ){
             uint256 claimedDivs = _claim(_addr, true);
              taxedDivs = claimedDivs.sub(claimedDivs.mul(CompoundTax).div(100)); // 3% tax on compounding
-            _total_amount += taxedDivs;
+            _total_amount += rollAmountOf(_addr, taxedDivs, true); // reduce the rollable amount if the user will reach the 5x limit with this roll
             taxedDivs = taxedDivs / 2;
         }
+
         //Transfer PISTON Tokens to the contract
         require(
             pistonToken.transferFrom(
@@ -311,14 +294,19 @@ contract PistonRaceTestnet is OwnableUpgradeable {
             ),
             "PISTON token transfer failed"
         );
+
         // record user new deposit (here comes fresh money. userRealDeposits only contains the amount from external. nothing from roll)
         usersRealDeposits[_addr].deposits += _total_amount_real;
         if(STORE_BUSD_VALUE){
             usersRealDeposits[_addr].deposits_BUSD += pistonTokenPriceFeed.getPrice(1).mul(_total_amount_real).div(1 ether); // new cash in BUSD
         }
+
         //per user deposit, 10% goes to sustainability tax. 
+
         _deposit(_addr, _total_amount);
+
         _refPayout(_addr, realizedDeposit + taxedDivs, ref_bonus);
+
         /** deposit amount and Time of Deposits/ it will record all new deposits of the user. 
             This mapping will be used to check if the deposits is will qualified for eject **/
 		users[_addr].userDepositsForEject.push(
@@ -329,10 +317,12 @@ contract PistonRaceTestnet is OwnableUpgradeable {
                 false
             )
         );
+
         emit Leaderboard(_addr, users[_addr].referrals, users[_addr].deposits, users[_addr].payouts, users[_addr].total_structure);
         total_txs++;
+
     }
-        
+    
     function stakeBoostSimulate(address _addr, uint256 _amount) external view returns (uint256 stakedPSTN, uint256 stakedBUSD) {
 
         require(users[_addr].upline != address(0) || _addr == owner(), "user not found"); // non existent user has no upline
@@ -425,7 +415,7 @@ contract PistonRaceTestnet is OwnableUpgradeable {
         (,uint256 _max_payout ,,) = payoutOf(_addr);
         
         require(users[_addr].payouts >= _max_payout || HasUsedEject(_addr) || users[_addr].referrals == 0, "User can only unstakeBoost if max payout has been reached or the race is over.");
-        require(usersBoosts[_addr].stakedBoost_PSTN > 0,"nothing staked");
+        require(usersBoosts[_addr].stakedBoost_PSTN > 0, "nothing staked");
         uint256 pistonPrice = pistonTokenPriceFeed.getPrice(1);
 
         require(pistonPrice > 0, "piston price missing");
@@ -618,16 +608,27 @@ contract PistonRaceTestnet is OwnableUpgradeable {
 
     }
 
-    //get the amount that can be rolled
     function rollAmountOf(address _addr, uint256 _toBeRolledAmount) view public returns(uint256 rollAmount) {
+        return rollAmountOf(_addr, _toBeRolledAmount, /*default*/false);
+    }
+
+    //get the amount that can be rolled
+    function rollAmountOf(address _addr, uint256 _toBeRolledAmount, bool _avoid_revert) view public returns(uint256 rollAmount) {
         
         //validate the total amount that can be rolled is 5x the users real deposit only.
         uint256 maxRollAmount = maxRollOf(usersRealDeposits[_addr].deposits); 
 
         rollAmount = _toBeRolledAmount; 
 
-        if(users[_addr].deposits >= maxRollAmount) { // user already got max roll
-            revert("User exceeded x5 of total deposit to be rolled.");
+        if(_avoid_revert == false){
+            if(users[_addr].deposits >= maxRollAmount) { // user already got max roll
+                revert("User exceeded x5 of total deposit to be rolled.");
+            }
+        }else{
+            if(users[_addr].deposits >= maxRollAmount) { // user already got max roll
+                rollAmount = 0;
+                return rollAmount;
+            }
         }
 
         if(users[_addr].deposits.add(rollAmount) >= maxRollAmount) { // user will reach max roll with current roll
@@ -993,8 +994,6 @@ contract PistonRaceTestnet is OwnableUpgradeable {
         emit NewAirdrop(_addr, _to, _realizedAmount, block.timestamp);
         emit NewDeposit(_to, _realizedAmount);
     }
-
-
 
 }
 
