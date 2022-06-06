@@ -4,6 +4,21 @@ pragma solidity 0.8.9;
 import "./libs/IUniswapV2Pair.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
+/*
+	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	
+		DEAR WHITEHATS!
+		THIS CONTRACT IS CURRENTLY UNDER REVIEW 
+		AND WILL BE CHANGED TO USE TWAP (Time Weighted Average Price) TO PREVENT PRICE MANIPULATIONS BY A FLASH LOAN ATTACK
+			
+	
+	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+*/
+
 contract PistonPriceFeed {
 
     using SafeMath for uint256;
