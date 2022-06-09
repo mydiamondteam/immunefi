@@ -1,58 +1,44 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.9;
 
-import "./libs/IUniswapV2Pair.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+import '@uniswap/v2-core/contracts/interfaces/IUniswapV2Factory.sol';
+import '@uniswap/v2-core/contracts/interfaces/IUniswapV2Pair.sol';
+import '@uniswap/lib/contracts/libraries/FixedPoint.sol';
 
-/*
-	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	
-		DEAR WHITEHATS!
-		THIS CONTRACT IS CURRENTLY UNDER REVIEW 
-		AND WILL BE CHANGED TO USE TWAP (Time Weighted Average Price) TO PREVENT PRICE MANIPULATIONS BY A FLASH LOAN ATTACK
-			
-	
-	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-	!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-*/
+import '@uniswap/v2-periphery/contracts/libraries/UniswapV2OracleLibrary.sol';
 
-contract PistonPriceFeed {
+contract PriceFeed {
 
     using SafeMath for uint256;
+    using FixedPoint for *;
 
     address owner;
-    address public marketPairAddressBUSD = address(0); // CHANGE THIS!!! TEST 0xE11e74De5a349BF6746E085e4E94ea5dDA83C7A8
-    address public marketPairAddressBNB = address(0); // CHANGE THIS!!! TEST 0x6120F2d2f2021264eA9E7F3e242c9bf74048b31c
-    address public marketPairAddressBNB_BUSD = address(0); // CHANGE THIS!!! TEST 0x58F876857a02D6762E0101bb5C46A8c1ED44Dc16
+    address public marketPairAddressBUSD = address(0xdd52bd6CcE78f3114ba83B04F006aec03f432779); // CHANGE THIS
 
-    ERC20 public pistonToken = ERC20(address(0)); // CHANGE THIS!!! test 0x911fb531944D0b6eC6270d59FC0821bCc104eEb4
-    ERC20 public busdtoken = ERC20(address(0x78867BbEeF44f2326bF8DDd1941a4439382EF2A7)); // MAINNET BUSD 0xe9e7CEA3DedcA5984780Bafc599bD69ADd087D56  TESTNET BUSD 0x78867BbEeF44f2326bF8DDd1941a4439382EF2A7
-    ERC20 public bnbtoken = ERC20(address(0xae13d989daC2f0dEbFf460aC112a837C89BAa7cd)); // MAINNET WBNB 0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c  TESTNET BUSD 0xae13d989daC2f0dEbFf460aC112a837C89BAa7cd
+    uint256 public PERIOD = 10 minutes;
+    uint32 public blockTimestampLast;
+
+    uint256 public PSTN_BUSD_price0CumulativeLast;
+    uint256 public PSTN_BUSD_price1CumulativeLast;
+
+    FixedPoint.uq112x112 public PSTN_BUSD_price0Average;
+    FixedPoint.uq112x112 public PSTN_BUSD_price1Average;
 
     constructor() {
         owner = msg.sender;
+
+        // PISTON/BUSD
+        PSTN_BUSD_price0CumulativeLast = IUniswapV2Pair(marketPairAddressBUSD).price0CumulativeLast();
+        PSTN_BUSD_price1CumulativeLast = IUniswapV2Pair(marketPairAddressBUSD).price1CumulativeLast();
+
+        (, , blockTimestampLast) = IUniswapV2Pair(marketPairAddressBUSD).getReserves();
     }
 
-    function setup(address piston_token, address busd_token, address bnb_token, address aam_pstn_busd, address aam_pstn_bnb, address aam_bnb_busd) external {
+    function setup(address aam_pstn_busd) external {
         require(msg.sender == owner, "owner only");
-        require(piston_token != address(0) && 
-            busd_token != address(0) && 
-            bnb_token != address(0) && 
-            aam_pstn_busd != address(0) && 
-            aam_pstn_bnb != address(0) && 
-            aam_bnb_busd != address(0)
-        );
+        require( aam_pstn_busd != address(0) );
 
         marketPairAddressBUSD = aam_pstn_busd;
-        marketPairAddressBNB = aam_pstn_bnb;
-        marketPairAddressBNB_BUSD = aam_bnb_busd;
-
-        pistonToken = ERC20(piston_token); 
-        busdtoken = ERC20(busd_token); 
-        bnbtoken = ERC20(bnb_token); 
     }
     
     function setOwner(address value) external {
@@ -61,66 +47,54 @@ contract PistonPriceFeed {
         owner = value;
     }
 
-    //  Market Data 
+    //  legacy alias
     //
     function getPrice(uint amount) external view returns(uint) {
-        return getPriceAverage() * amount;
+        return getPriceTWAP(amount);
     }
 
-    function getPriceByReserves(uint amount) external view returns(uint) {
-        IUniswapV2Pair pair = IUniswapV2Pair(marketPairAddressBUSD);
-        ERC20 token0 = ERC20(pair.token0());
-        (uint Res0, uint Res1,) = pair.getReserves();
-
-        // decimals
-        uint _Res1 = Res1*(10**token0.decimals());
-        uint _Res0 = Res0;
-        
-        return ((amount*_Res1)/_Res0);
+    // price BUSD only calculated by TWAP (Time Weighted Average Price)
+    // use this if you need to store the price
+    // flash loan safe
+    function getPriceTWAP(uint amountIn) public view returns (uint amountOut) {
+        amountOut = PSTN_BUSD_price0Average.mul(amountIn.mul(1 ether)).decode144();
     }
 
-    function getPriceByBalancesBUSD() public view returns(uint) {
-        IUniswapV2Pair pair = IUniswapV2Pair(marketPairAddressBUSD);      
+    // update TWAP price. this is called several times from other contracts to have actual values.
+    function updateTWAP() external {
 
-        // decimals
-        uint _Res0 = pistonToken.balanceOf(address(pair));
-        uint _Res1 = busdtoken.balanceOf(address(pair));        
-        
-        return ((_Res1*10**18)/_Res0);
+        //  PISTON/BUSD
+        //------------------------------------------------------------
+        (uint PSTN_BUSD_price0Cumulative, uint PSTN_BUSD_price1Cumulative, uint32 PSTN_BUSD_blockTimestamp) =
+            UniswapV2OracleLibrary.currentCumulativePrices(address(marketPairAddressBUSD));
+        uint32 timeElapsed = PSTN_BUSD_blockTimestamp - blockTimestampLast; // overflow is desired
+
+        // ensure that at least one full period has passed since the last update
+        require(timeElapsed >= PERIOD, 'PistonPriceFeed: PERIOD_NOT_ELAPSED');
+
+        // overflow is desired, casting never truncates
+        // cumulative price is in (uq112x112 price * seconds) units so we simply wrap it after division by time elapsed
+        PSTN_BUSD_price0Average = FixedPoint.uq112x112(uint224((PSTN_BUSD_price0Cumulative - PSTN_BUSD_price0CumulativeLast) / timeElapsed));
+        PSTN_BUSD_price1Average = FixedPoint.uq112x112(uint224((PSTN_BUSD_price1Cumulative - PSTN_BUSD_price1CumulativeLast) / timeElapsed));
+
+        PSTN_BUSD_price0CumulativeLast = PSTN_BUSD_price0Cumulative;
+        PSTN_BUSD_price1CumulativeLast = PSTN_BUSD_price1Cumulative;
+
+        blockTimestampLast = PSTN_BUSD_blockTimestamp;
     }
 
-    function getPriceByBalancesBNB() public view returns(uint) {
-        IUniswapV2Pair pair = IUniswapV2Pair(marketPairAddressBNB); 
+    function needsUpdateTWAP() external view returns (bool){
+        (, , uint32 blockTimestamp) =
+            UniswapV2OracleLibrary.currentCumulativePrices(address(marketPairAddressBUSD));
+        uint32 timeElapsed = blockTimestamp - blockTimestampLast;
 
-        // decimals
-        uint _Res0 = pistonToken.balanceOf(address(pair));
-        uint _Res1 = bnbtoken.balanceOf(address(pair));        
-        
-        return ((_Res1*10**18)/_Res0);
+        return timeElapsed >= PERIOD;
     }
 
-    function getBNBPrice() public view returns(uint) {
-        IUniswapV2Pair pair = IUniswapV2Pair(marketPairAddressBNB_BUSD); 
+    function update_PERIOD(uint256 value) external {
+        require(msg.sender == owner, "only owner");
 
-        // decimals
-        uint _Res0 = busdtoken.balanceOf(address(pair));
-        uint _Res1 = bnbtoken.balanceOf(address(pair));        
-        
-        return ((_Res0*10**18)/_Res1);
-    }
-
-    function getPriceAverage() public view returns(uint) {
-
-        uint256 pistonBalanceAtBUSDPAIR = pistonToken.balanceOf(address(marketPairAddressBUSD));
-        uint256 pistonBalanceAtBNBPAIR = pistonToken.balanceOf(address(marketPairAddressBNB));
-
-        uint256 PSTNPriceAtBUSDPair = getPriceByBalancesBUSD();
-        uint256 PSTNPriceAtBNBPair = getPriceByBalancesBNB();
-
-        return pistonBalanceAtBUSDPAIR.mul(PSTNPriceAtBUSDPair).add(
-                pistonBalanceAtBNBPAIR.mul(PSTNPriceAtBNBPair).mul(getBNBPrice().div(1 ether))            
-            ).div(pistonBalanceAtBUSDPAIR.add(pistonBalanceAtBNBPAIR)
-        );
+        PERIOD = value;
     }
 }
     
@@ -185,4 +159,86 @@ library SafeMath {
     function min(uint256 a, uint256 b) internal pure returns (uint256) {
         return a < b ? a : b;
     }
+}
+
+/**
+ * @dev Interface of the ERC20 standard as defined in the EIP.
+ */
+interface IERC20 {
+    /**
+     * @dev Returns the amount of tokens in existence.
+     */
+    function totalSupply() external view returns (uint256);
+
+    /**
+     * @dev Returns the amount of tokens owned by `account`.
+     */
+    function balanceOf(address account) external view returns (uint256);
+
+    /**
+     * @dev Moves `amount` tokens from the caller's account to `recipient`.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transfer(address recipient, uint256 amount) external returns (bool);
+
+    /**
+     * @dev Returns the remaining number of tokens that `spender` will be
+     * allowed to spend on behalf of `owner` through {transferFrom}. This is
+     * zero by default.
+     *
+     * This value changes when {approve} or {transferFrom} are called.
+     */
+    function allowance(address owner, address spender) external view returns (uint256);
+
+    /**
+     * @dev Sets `amount` as the allowance of `spender` over the caller's tokens.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * IMPORTANT: Beware that changing an allowance with this method brings the risk
+     * that someone may use both the old and the new allowance by unfortunate
+     * transaction ordering. One possible solution to mitigate this race
+     * condition is to first reduce the spender's allowance to 0 and set the
+     * desired value afterwards:
+     * https://github.com/ethereum/EIPs/issues/20#issuecomment-263524729
+     *
+     * Emits an {Approval} event.
+     */
+    function approve(address spender, uint256 amount) external returns (bool);
+
+    /**
+     * @dev Moves `amount` tokens from `sender` to `recipient` using the
+     * allowance mechanism. `amount` is then deducted from the caller's
+     * allowance.
+     *
+     * Returns a boolean value indicating whether the operation succeeded.
+     *
+     * Emits a {Transfer} event.
+     */
+    function transferFrom(
+        address sender,
+        address recipient,
+        uint256 amount
+    ) external returns (bool);
+
+    function decimals() external view returns (uint8);
+
+    /**
+     * @dev Emitted when `value` tokens are moved from one account (`from`) to
+     * another (`to`).
+     *
+     * Note that `value` may be zero.
+     */
+    event Transfer(address indexed from, address indexed to, uint256 value);
+
+    /**
+     * @dev Emitted when the allowance of a `spender` for an `owner` is set by
+     * a call to {approve}. `value` is the new allowance.
+     */
+    event Approval(address indexed owner, address indexed spender, uint256 value);
+
+
 }
