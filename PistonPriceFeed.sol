@@ -47,6 +47,12 @@ contract PriceFeed {
         owner = value;
     }
 
+    function setPeriod(uint256 value) external {
+        require(msg.sender == owner, "only owner");
+        require(value > 0);
+        PERIOD = value;
+    }
+
     //  legacy alias
     //
     function getPrice(uint amount) external view returns(uint) {
@@ -54,8 +60,6 @@ contract PriceFeed {
     }
 
     // price BUSD only calculated by TWAP (Time Weighted Average Price)
-    // use this if you need to store the price
-    // flash loan safe
     function getPriceTWAP(uint amountIn) public view returns (uint amountOut) {
         amountOut = PSTN_BUSD_price0Average.mul(amountIn.mul(1 ether)).decode144();
     }
@@ -67,20 +71,22 @@ contract PriceFeed {
         //------------------------------------------------------------
         (uint PSTN_BUSD_price0Cumulative, uint PSTN_BUSD_price1Cumulative, uint32 PSTN_BUSD_blockTimestamp) =
             UniswapV2OracleLibrary.currentCumulativePrices(address(marketPairAddressBUSD));
-        uint32 timeElapsed = PSTN_BUSD_blockTimestamp - blockTimestampLast; // overflow is desired
+        unchecked { 
+            uint32 timeElapsed =  PSTN_BUSD_blockTimestamp - blockTimestampLast;  // overflow is desired
 
-        // ensure that at least one full period has passed since the last update
-        require(timeElapsed >= PERIOD, 'PistonPriceFeed: PERIOD_NOT_ELAPSED');
+            // ensure that at least one full period has passed since the last update
+            require(timeElapsed >= PERIOD, 'PistonPriceFeed: PERIOD_NOT_ELAPSED');        
 
-        // overflow is desired, casting never truncates
-        // cumulative price is in (uq112x112 price * seconds) units so we simply wrap it after division by time elapsed
-        PSTN_BUSD_price0Average = FixedPoint.uq112x112(uint224((PSTN_BUSD_price0Cumulative - PSTN_BUSD_price0CumulativeLast) / timeElapsed));
-        PSTN_BUSD_price1Average = FixedPoint.uq112x112(uint224((PSTN_BUSD_price1Cumulative - PSTN_BUSD_price1CumulativeLast) / timeElapsed));
+            // overflow is desired, casting never truncates
+            // cumulative price is in (uq112x112 price * seconds) units so we simply wrap it after division by time elapsed
+            PSTN_BUSD_price0Average = FixedPoint.uq112x112(uint224((PSTN_BUSD_price0Cumulative - PSTN_BUSD_price0CumulativeLast) / timeElapsed));
+            PSTN_BUSD_price1Average = FixedPoint.uq112x112(uint224((PSTN_BUSD_price1Cumulative - PSTN_BUSD_price1CumulativeLast) / timeElapsed));
 
-        PSTN_BUSD_price0CumulativeLast = PSTN_BUSD_price0Cumulative;
-        PSTN_BUSD_price1CumulativeLast = PSTN_BUSD_price1Cumulative;
+            PSTN_BUSD_price0CumulativeLast = PSTN_BUSD_price0Cumulative;
+            PSTN_BUSD_price1CumulativeLast = PSTN_BUSD_price1Cumulative;
 
-        blockTimestampLast = PSTN_BUSD_blockTimestamp;
+            blockTimestampLast = PSTN_BUSD_blockTimestamp;
+        }
     }
 
     function needsUpdateTWAP() external view returns (bool){
@@ -89,12 +95,6 @@ contract PriceFeed {
         uint32 timeElapsed = blockTimestamp - blockTimestampLast;
 
         return timeElapsed >= PERIOD;
-    }
-
-    function update_PERIOD(uint256 value) external {
-        require(msg.sender == owner, "only owner");
-
-        PERIOD = value;
     }
 }
     
